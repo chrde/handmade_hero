@@ -1,5 +1,5 @@
+#include <stdint.h>
 #include <windows.h>
-
 #define internal static
 #define local_persist static
 #define global_variable static
@@ -8,36 +8,48 @@
 global_variable bool running;
 global_variable BITMAPINFO bitmapInfo;
 global_variable void *bitmapMemory;
-global_variable HBITMAP bitmapHandle;
-global_variable HDC bitmapDeviceContext;
+global_variable int bitmapWidth;
+global_variable int bitmapHeight;
 
 internal void Win32ResizeDIBSection(int width, int height) {
-  // TODO improve
+  if (bitmapMemory) {
+    VirtualFree(bitmapMemory, 0, MEM_RELEASE);
+  }
 
-  if (bitmapHandle) {
-    DeleteObject(bitmapHandle);
-  }
-  if (!bitmapDeviceContext) {
-    // TODO should we recreate it?
-    bitmapDeviceContext = CreateCompatibleDC(0);
-  }
+  bitmapWidth = width;
+  bitmapHeight = height;
 
   BITMAPINFOHEADER *header = &bitmapInfo.bmiHeader;
   header->biSize = sizeof(*header);
-  header->biWidth = width;
-  header->biHeight = height;
+  header->biWidth = bitmapWidth;
+  header->biHeight = -bitmapHeight;
   header->biPlanes = 1;
   header->biBitCount = 32;
   header->biCompression = BI_RGB;
 
-  bitmapHandle = CreateDIBSection(bitmapDeviceContext, &bitmapInfo,
-                                  DIB_RGB_COLORS, &bitmapMemory, 0, 0);
+  int bytesPerPixel = header->biBitCount / 8;
+  int bitmapMemorySize = (width * height) * bytesPerPixel;
+  bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+
+  int pitch = width * bytesPerPixel;
+  uint8_t *row = (uint8_t *)bitmapMemory;
+  for (int y = 0; y < bitmapHeight; ++y) {
+    uint32_t *pixel = (uint32_t *)row;
+    for (int x = 0; x < bitmapWidth; ++x) {
+      *pixel = (uint8_t)x + ((uint8_t)y << 8);
+      ++pixel;
+    }
+    row += pitch;
+  }
 }
 
-internal void Win32UpdateWindow(HDC deviceContext, int x, int y, int width,
-                                int height) {
-  StretchDIBits(deviceContext, x, y, width, height, x, y, width, height,
-                bitmapMemory, &bitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+internal void Win32UpdateWindow(HDC deviceContext, RECT *windowRect, int x,
+                                int y, int width, int height) {
+  int windowWidth = windowRect->right - windowRect->left;
+  int windowHeight = windowRect->bottom - windowRect->top;
+  StretchDIBits(deviceContext, 0, 0, bitmapWidth, bitmapHeight, 0, 0,
+                windowWidth, windowHeight, bitmapMemory, &bitmapInfo,
+                DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
@@ -69,7 +81,9 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
       int y = rect.top;
       int height = rect.bottom - rect.top;
       int width = rect.right - rect.left;
-      Win32UpdateWindow(deviceContext, x, y, width, height);
+      RECT c;
+      GetClientRect(window, &c);
+      Win32UpdateWindow(deviceContext, &c, x, y, width, height);
       EndPaint(window, &paint);
       break;
     }
