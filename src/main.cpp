@@ -10,6 +10,22 @@ global_variable BITMAPINFO bitmapInfo;
 global_variable void *bitmapMemory;
 global_variable int bitmapWidth;
 global_variable int bitmapHeight;
+global_variable int bytesPerPixel;
+
+internal void renderSomething(int xOffset, int yOffset) {
+  int pitch = bitmapWidth * bytesPerPixel;
+  uint8_t *row = (uint8_t *)bitmapMemory;
+  for (int y = 0; y < bitmapHeight; ++y) {
+    uint32_t *pixel = (uint32_t *)row;
+    for (int x = 0; x < bitmapWidth; ++x) {
+      uint8_t green = y + yOffset;
+      uint8_t blue = x + xOffset;
+      *pixel = ((green << 8) | blue);
+      ++pixel;
+    }
+    row += pitch;
+  }
+}
 
 internal void Win32ResizeDIBSection(int width, int height) {
   if (bitmapMemory) {
@@ -27,26 +43,17 @@ internal void Win32ResizeDIBSection(int width, int height) {
   header->biBitCount = 32;
   header->biCompression = BI_RGB;
 
-  int bytesPerPixel = header->biBitCount / 8;
+  bytesPerPixel = header->biBitCount / 8;
   int bitmapMemorySize = (width * height) * bytesPerPixel;
   bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 
-  int pitch = width * bytesPerPixel;
-  uint8_t *row = (uint8_t *)bitmapMemory;
-  for (int y = 0; y < bitmapHeight; ++y) {
-    uint32_t *pixel = (uint32_t *)row;
-    for (int x = 0; x < bitmapWidth; ++x) {
-      *pixel = (uint8_t)x + ((uint8_t)y << 8);
-      ++pixel;
-    }
-    row += pitch;
-  }
+  // TODO clear to black
 }
 
-internal void Win32UpdateWindow(HDC deviceContext, RECT *windowRect, int x,
+internal void Win32UpdateWindow(HDC deviceContext, RECT *clientRect, int x,
                                 int y, int width, int height) {
-  int windowWidth = windowRect->right - windowRect->left;
-  int windowHeight = windowRect->bottom - windowRect->top;
+  int windowWidth = clientRect->right - clientRect->left;
+  int windowHeight = clientRect->bottom - clientRect->top;
   StretchDIBits(deviceContext, 0, 0, bitmapWidth, bitmapHeight, 0, 0,
                 windowWidth, windowHeight, bitmapMemory, &bitmapInfo,
                 DIB_RGB_COLORS, SRCCOPY);
@@ -74,6 +81,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
       break;
     }
     case WM_PAINT: {
+      OutputDebugString("WM_PAINT\n");
       PAINTSTRUCT paint;
       HDC deviceContext = BeginPaint(window, &paint);
       RECT rect = paint.rcPaint;
@@ -108,21 +116,31 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance,
   WindowClass.hInstance = instance;
   WindowClass.lpszClassName = "MyWindowClass";
   if (RegisterClass(&WindowClass)) {
-    HWND windowHandle = CreateWindowEx(
-        0, WindowClass.lpszClassName, "Super stuff",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-        CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
-    if (windowHandle) {
+    HWND window = CreateWindowEx(0, WindowClass.lpszClassName, "Super stuff",
+                                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                                 CW_USEDEFAULT, 0, 0, instance, 0);
+    if (window) {
       running = true;
       MSG message;
+      int xOffset = 0;
       while (running) {
-        BOOL messageResult = GetMessage(&message, 0, 0, 0);
-        if (messageResult > 0) {
+        while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
+          if (message.message == WM_QUIT) {
+            running = false;
+          }
           TranslateMessage(&message);
           DispatchMessage(&message);
-        } else {
-          break;
         }
+        renderSomething(xOffset, 0);
+        HDC deviceContext = GetDC(window);
+        RECT c;
+        GetClientRect(window, &c);
+        int width = c.right - c.left;
+        int height = c.bottom - c.top;
+        Win32UpdateWindow(deviceContext, &c, 0, 0, width, height);
+        ReleaseDC(window, deviceContext);
+        ++xOffset;
       }
     } else {
       // TODO logging
