@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <windows.h>
+#include <xinput.h>
 #define internal static
 #define local_persist static
 #define global_variable static
@@ -36,6 +37,20 @@ struct win32_window_dimension {
   int width;
   int height;
 };
+
+#define X_INPUT_GET_STATE(name) \
+  DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+typedef X_INPUT_GET_STATE(x_input_get_state);
+X_INPUT_GET_STATE(XInputGetStateStub) { return (0); }
+global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
+#define XInputGetState XInputGetState_
+
+#define X_INPUT_SET_STATE(name) \
+  DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pVibration)
+typedef X_INPUT_SET_STATE(x_input_set_state);
+X_INPUT_SET_STATE(XInputSetStateStub) { return (0); }
+global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
+#define XInputSetState XInputSetState_
 
 internal win32_window_dimension Win32GetWindowDimension(HWND window) {
   win32_window_dimension dimension;
@@ -127,7 +142,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance,
                      LPSTR commandLine, int showCode) {
-  uint8_t bla[2 * 1024 * 1024] = {};
   WNDCLASS WindowClass = {};
   Win32ResizeDIBSection(&backBuffer, 1280, 720);
   WindowClass.style = CS_HREDRAW | CS_VREDRAW;
@@ -151,6 +165,19 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance,
           }
           TranslateMessage(&message);
           DispatchMessage(&message);
+        }
+        for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT;
+             controllerIndex++) {
+          XINPUT_STATE state;
+          // ZeroMemory(&state, sizeof(XINPUT_STATE));
+
+          if (XInputGetState(controllerIndex, &state) == ERROR_SUCCESS) {
+            // TODO see if state.dwPacketNumber is too big
+            // Controller is connected
+
+          } else {
+            // Controller is not connected
+          }
         }
         renderSomething(backBuffer, xOffset, yOffset);
         HDC deviceContext = GetDC(window);
