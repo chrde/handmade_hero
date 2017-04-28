@@ -18,18 +18,17 @@ struct win32_offscreen_buffer {
 global_variable bool running;
 global_variable win32_offscreen_buffer backBuffer;
 
-internal void renderSomething(win32_offscreen_buffer buffer, int xOffset,
-                              int yOffset) {
-  uint8_t *row = (uint8_t *)buffer.memory;
-  for (int y = 0; y < buffer.height; ++y) {
+internal void renderSomething(win32_offscreen_buffer *buffer, int xOffset, int yOffset) {
+  uint8_t *row = (uint8_t *)buffer->memory;
+  for (int y = 0; y < buffer->height; ++y) {
     uint32_t *pixel = (uint32_t *)row;
-    for (int x = 0; x < buffer.width; ++x) {
+    for (int x = 0; x < buffer->width; ++x) {
       uint8_t green = y + yOffset;
       uint8_t blue = x + xOffset;
       *pixel = ((green << 8) | blue);
       ++pixel;
     }
-    row += buffer.pitch;
+    row += buffer->pitch;
   }
 }
 
@@ -38,19 +37,25 @@ struct win32_window_dimension {
   int height;
 };
 
-#define X_INPUT_GET_STATE(name) \
-  DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(XInputGetStateStub) { return (0); }
 global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
 
-#define X_INPUT_SET_STATE(name) \
-  DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pVibration)
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub) { return (0); }
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
+
+internal void Win32LoadXInput(void) {
+  HMODULE xInputLibrary = LoadLibraryA("xinput1_3.dll");
+  if (xInputLibrary) {
+    XInputGetState = (x_input_get_state *)GetProcAddress(xInputLibrary, "XInputGetState");
+    XInputSetState = (x_input_set_state *)GetProcAddress(xInputLibrary, "XInputSetState");
+  }
+}
 
 internal win32_window_dimension Win32GetWindowDimension(HWND window) {
   win32_window_dimension dimension;
@@ -61,8 +66,7 @@ internal win32_window_dimension Win32GetWindowDimension(HWND window) {
   return dimension;
 }
 
-internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width,
-                                    int height) {
+internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, int height) {
   if (buffer->memory) {
     VirtualFree(buffer->memory, 0, MEM_RELEASE);
   }
@@ -87,21 +91,41 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width,
   // TODO clear to black
 }
 
-internal void Win32DisplayBufferInWindow(HDC deviceContext, int windowWidth,
-                                         int windowHeight,
-                                         win32_offscreen_buffer buffer, int x,
-                                         int y, int width, int height) {
+internal void Win32DisplayBufferInWindow(win32_offscreen_buffer *buffer, HDC deviceContext, int windowWidth,
+                                         int windowHeight, int x, int y, int width, int height) {
   // TODO aspect ratio correction
-  StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0,
-                buffer.width, buffer.height, buffer.memory, &buffer.info,
-                DIB_RGB_COLORS, SRCCOPY);
+  StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer->width, buffer->height, buffer->memory,
+                &buffer->info, DIB_RGB_COLORS, SRCCOPY);
 }
 
-LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
-                                         WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   LRESULT result = 0;
   switch (message) {
     case WM_SIZE: {
+      break;
+    }
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
+    case WM_KEYDOWN:
+    case WM_KEYUP: {
+      uint32_t vkCode = wParam;
+      bool wasDown = ((lParam & (1 << 30)) != 0);
+      bool isDown = ((lParam & (1 << 31)) == 0);
+      if (isDown == wasDown) {
+        break;
+      }
+      if (vkCode == VK_UP) {
+        if (isDown) {
+          OutputDebugString("UP is down\n");
+        }
+        if (wasDown) {
+          OutputDebugString("UP was down\n");
+        }
+      } else if (vkCode == 'W') {
+        OutputDebugString("W\n");
+      } else if (vkCode == VK_ESCAPE) {
+      } else if (vkCode == VK_SPACE) {
+      }
       break;
     }
     case WM_DESTROY: {
@@ -122,9 +146,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
       int height = rect.bottom - rect.top;
       int width = rect.right - rect.left;
       win32_window_dimension dimension = Win32GetWindowDimension(window);
-      Win32DisplayBufferInWindow(deviceContext, dimension.width,
-                                 dimension.height, backBuffer, x, y, width,
-                                 height);
+      Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height, x, y, width, height);
       EndPaint(window, &paint);
       break;
     }
@@ -140,19 +162,17 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message,
   return result;
 }
 
-int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance,
-                     LPSTR commandLine, int showCode) {
-  WNDCLASS WindowClass = {};
+int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+  Win32LoadXInput();
+  WNDCLASSA WindowClass = {};
   Win32ResizeDIBSection(&backBuffer, 1280, 720);
   WindowClass.style = CS_HREDRAW | CS_VREDRAW;
   WindowClass.lpfnWndProc = Win32MainWindowCallback;
   WindowClass.hInstance = instance;
   WindowClass.lpszClassName = "MyWindowClass";
   if (RegisterClass(&WindowClass)) {
-    HWND window = CreateWindowEx(0, WindowClass.lpszClassName, "Super stuff",
-                                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-                                 CW_USEDEFAULT, 0, 0, instance, 0);
+    HWND window = CreateWindowEx(0, WindowClass.lpszClassName, "Super stuff", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
     if (window) {
       running = true;
       MSG message;
@@ -166,28 +186,52 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance,
           TranslateMessage(&message);
           DispatchMessage(&message);
         }
-        for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT;
-             controllerIndex++) {
+        for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT; controllerIndex++) {
           XINPUT_STATE state;
           // ZeroMemory(&state, sizeof(XINPUT_STATE));
 
           if (XInputGetState(controllerIndex, &state) == ERROR_SUCCESS) {
             // TODO see if state.dwPacketNumber is too big
-            // Controller is connected
+            XINPUT_GAMEPAD *pad = &state.Gamepad;
+
+            bool up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+            bool down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+            bool left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+            bool right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+            bool start = (pad->wButtons & XINPUT_GAMEPAD_START);
+            bool back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+            bool leftShoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+            bool rightShoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+            bool A = (pad->wButtons & XINPUT_GAMEPAD_A);
+            bool B = (pad->wButtons & XINPUT_GAMEPAD_B);
+            bool X = (pad->wButtons & XINPUT_GAMEPAD_X);
+            bool Y = (pad->wButtons & XINPUT_GAMEPAD_Y);
+            int16_t stickX = pad->sThumbLX;
+            int16_t stickY = pad->sThumbLY;
+
+            if (A) {
+              yOffset += 2;
+            }
+            if (B) {
+              xOffset += 2;
+            }
 
           } else {
             // Controller is not connected
           }
         }
-        renderSomething(backBuffer, xOffset, yOffset);
+        XINPUT_VIBRATION vibration;
+        vibration.wLeftMotorSpeed = 60000;
+        vibration.wRightMotorSpeed = 60000;
+        // XInputSetState(0, &vibration);
+        renderSomething(&backBuffer, xOffset, yOffset);
         HDC deviceContext = GetDC(window);
         win32_window_dimension dimension = Win32GetWindowDimension(window);
-        Win32DisplayBufferInWindow(deviceContext, dimension.width,
-                                   dimension.height, backBuffer, 0, 0,
-                                   dimension.width, dimension.height);
+        Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height, 0, 0, dimension.width,
+                                   dimension.height);
         ReleaseDC(window, deviceContext);
-        ++xOffset;
-        ++yOffset;
+        // ++xOffset;
+        // ++yOffset;
       }
     } else {
       // TODO logging
