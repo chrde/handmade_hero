@@ -4,6 +4,7 @@
 #define internal static
 #define local_persist static
 #define global_variable static
+typedef int32_t bool32;
 
 struct win32_offscreen_buffer {
   BITMAPINFO info;
@@ -39,18 +40,21 @@ struct win32_window_dimension {
 
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
-X_INPUT_GET_STATE(XInputGetStateStub) { return (0); }
+X_INPUT_GET_STATE(XInputGetStateStub) { return (ERROR_DEVICE_NOT_CONNECTED); }
 global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
 
 #define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
-X_INPUT_SET_STATE(XInputSetStateStub) { return (0); }
+X_INPUT_SET_STATE(XInputSetStateStub) { return (ERROR_DEVICE_NOT_CONNECTED); }
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
 internal void Win32LoadXInput(void) {
-  HMODULE xInputLibrary = LoadLibraryA("xinput1_3.dll");
+  HMODULE xInputLibrary = LoadLibraryA("xinput1_4.dll");
+  if (!xInputLibrary) {
+    xInputLibrary = LoadLibraryA("xinput1_3.dll");
+  }
   if (xInputLibrary) {
     XInputGetState = (x_input_get_state *)GetProcAddress(xInputLibrary, "XInputGetState");
     XInputSetState = (x_input_set_state *)GetProcAddress(xInputLibrary, "XInputSetState");
@@ -125,6 +129,10 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         OutputDebugString("W\n");
       } else if (vkCode == VK_ESCAPE) {
       } else if (vkCode == VK_SPACE) {
+      }
+      bool32 altKeyWasDown = (lParam & (1 << 29));
+      if ((vkCode == VK_F4) && altKeyWasDown) {
+        running = false;
       }
       break;
     }
