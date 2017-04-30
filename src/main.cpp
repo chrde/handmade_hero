@@ -19,6 +19,7 @@ struct win32_offscreen_buffer {
 // TODO change this
 global_variable bool running;
 global_variable win32_offscreen_buffer backBuffer;
+global_variable LPDIRECTSOUNDBUFFER audioBuffer;
 
 internal void renderSomething(win32_offscreen_buffer *buffer, int xOffset, int yOffset) {
   uint8_t *row = (uint8_t *)buffer->memory;
@@ -101,13 +102,8 @@ internal void Win32InitDSound(HWND window, int32_t samplesPerSecond, int32_t buf
       bufferDescription.dwFlags = 0;
       bufferDescription.dwBufferBytes = bufferSize;
       bufferDescription.lpwfxFormat = &waveFormat;
-      LPDIRECTSOUNDBUFFER secondaryBuffer;
-      if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0))) {
-        if (SUCCEEDED(secondaryBuffer->SetFormat(&waveFormat))) {
-          OutputDebugStringA("Secondary buffer format was set.\n");
-        } else {
-          // TODO diagnostic
-        }
+      if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &audioBuffer, 0))) {
+        OutputDebugStringA("Audio buffer created.\n");
       }
     } else {
       // TODO diagnostic
@@ -237,12 +233,22 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     HWND window = CreateWindowEx(0, WindowClass.lpszClassName, "Super stuff", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                                  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
     if (window) {
-      Win32InitDSound(window, 48000, 48000 * sizeof(int16_t) * 2);
+      HDC deviceContext = GetDC(window);
       running = true;
-      MSG message;
       int xOffset = 0;
       int yOffset = 0;
+      int samplesPerSecond = 48000;
+      int toneHz = 50;
+      uint32_t runningSampleIndex = 0;
+      int squareWavePeriod = samplesPerSecond / toneHz;
+      int halfSquareWavePeriod = squareWavePeriod / 2;
+      int bytesPerSample = sizeof(int16_t) * 2;//waveFormat.nSamples * waveFormat.bytesPerSample
+      int audioBufferSize = samplesPerSecond * bytesPerSample;
+      int16_t toneVolume = 2000;
+      Win32InitDSound(window, samplesPerSecond, audioBufferSize);
+      audioBuffer->Play(0, 0, DSBPLAY_LOOPING);
       while (running) {
+        MSG message;
         while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
           if (message.message == WM_QUIT) {
             running = false;
@@ -273,12 +279,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             int16_t stickX = pad->sThumbLX;
             int16_t stickY = pad->sThumbLY;
 
-            if (A) {
-              yOffset += 2;
-            }
-            if (B) {
-              xOffset += 2;
-            }
+            xOffset += stickX >> 13;
+            yOffset += stickY >> 13;
 
           } else {
             // Controller is not connected
@@ -289,7 +291,44 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         vibration.wRightMotorSpeed = 60000;
         // XInputSetState(0, &vibration);
         renderSomething(&backBuffer, xOffset, yOffset);
-        HDC deviceContext = GetDC(window);
+
+        DWORD playCursor;
+        DWORD writeCursor;
+        if (SUCCEEDED(audioBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
+          DWORD byteToLock = runningSampleIndex * bytesPerSample % audioBufferSize;
+          DWORD bytesToWrite;
+          if (byteToLock > playCursor) {
+            bytesToWrite = audioBufferSize - byteToLock;
+            bytesToWrite += playCursor;
+          } else {
+            bytesToWrite = playCursor - byteToLock;
+          }
+
+          VOID *region0;
+          DWORD region0Size;
+          VOID *region1;
+          DWORD region1Size;
+
+          if (SUCCEEDED(
+                  audioBuffer->Lock(byteToLock, bytesToWrite, &region0, &region0Size, &region1, &region1Size, 0))) {
+            // TODO assert that region0size/region1size is valid
+            int16_t *sampleOut = (int16_t *)region0;
+            DWORD region0SampleCount = region0Size / bytesPerSample;
+            for (DWORD sampleIndex = 0; sampleIndex < region0SampleCount; ++sampleIndex) {
+              int16_t sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? toneVolume : -toneVolume;
+              *sampleOut++ = sampleValue;
+              *sampleOut++ = sampleValue;
+            }
+            sampleOut = (int16_t *)region1;
+            DWORD region1SampleCount = region1Size / bytesPerSample;
+            for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+              int16_t sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? toneVolume : -toneVolume;
+              *sampleOut++ = sampleValue;
+              *sampleOut++ = sampleValue;
+            }
+            audioBuffer->Unlock(region0, region0Size, region1, region1Size);
+          }
+        }
         win32_window_dimension dimension = Win32GetWindowDimension(window);
         Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height, 0, 0, dimension.width,
                                    dimension.height);

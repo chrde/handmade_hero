@@ -1,11 +1,12 @@
 {
     "version": "0.1.0",
-    "tasks": [
-        {
-            "taskName": "build",
-            "command": "build.bat",
-            "isShellCommand": true,
-            "isBackground": true
-        }
-    ]
+    "tasks": [{
+        "taskName": "build",
+        "command": "build.bat",
+        "isShellCommand": true,
+        "isBuildCommand": true,
+        "showOutput": "silent",
+        "isBackground": false,
+        "problemMatcher": "$msCompile"
+    }]
 }
