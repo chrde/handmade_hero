@@ -1,23 +1,25 @@
 #include <dsound.h>
+#include <math.h>
 #include <stdint.h>
 #include <windows.h>
 #include <xinput.h>
 #define internal static
 #define local_persist static
 #define global_variable static
+#define PI 3.14159265359f
 typedef int32_t bool32;
 
 struct win32_offscreen_buffer {
+  // NOTE pixels are always 32bits wide, Memory order BB GG RR XX
   BITMAPINFO info;
   void *memory;
   int width;
   int height;
   int pitch;
-  int bytesPerPixel;
 };
 
 // TODO change this
-global_variable bool running;
+global_variable bool32 running;
 global_variable win32_offscreen_buffer backBuffer;
 global_variable LPDIRECTSOUNDBUFFER audioBuffer;
 
@@ -57,6 +59,9 @@ typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
 internal void Win32LoadXInput(void) {
   HMODULE xInputLibrary = LoadLibraryA("xinput1_4.dll");
+  if (!xInputLibrary) {
+    xInputLibrary = LoadLibraryA("xinput9_1_0.dll");
+  }
   if (!xInputLibrary) {
     xInputLibrary = LoadLibraryA("xinput1_3.dll");
   }
@@ -126,6 +131,9 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
     VirtualFree(buffer->memory, 0, MEM_RELEASE);
   }
 
+  int bytesPerPixel = 4;
+  int memorySize = (width * height) * bytesPerPixel;
+
   BITMAPINFOHEADER *header = &buffer->info.bmiHeader;
   // NOTE negative height means top-down bitmap e.g: the first three bytes of
   // the image form the color of the top left pixel
@@ -138,16 +146,14 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
 
   buffer->width = width;
   buffer->height = height;
-  buffer->bytesPerPixel = header->biBitCount / 8;
-  buffer->pitch = buffer->width * buffer->bytesPerPixel;
-  int memorySize = (width * height) * buffer->bytesPerPixel;
+  buffer->pitch = buffer->width * bytesPerPixel;
   buffer->memory = VirtualAlloc(0, memorySize, MEM_COMMIT, PAGE_READWRITE);
 
   // TODO clear to black
 }
 
 internal void Win32DisplayBufferInWindow(win32_offscreen_buffer *buffer, HDC deviceContext, int windowWidth,
-                                         int windowHeight, int x, int y, int width, int height) {
+                                         int windowHeight) {
   // TODO aspect ratio correction
   StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer->width, buffer->height, buffer->memory,
                 &buffer->info, DIB_RGB_COLORS, SRCCOPY);
@@ -164,8 +170,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     case WM_KEYDOWN:
     case WM_KEYUP: {
       uint32_t vkCode = wParam;
-      bool wasDown = ((lParam & (1 << 30)) != 0);
-      bool isDown = ((lParam & (1 << 31)) == 0);
+      bool32 wasDown = ((lParam & (1 << 30)) != 0);
+      bool32 isDown = ((lParam & (1 << 31)) == 0);
       if (isDown == wasDown) {
         break;
       }
@@ -199,13 +205,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     case WM_PAINT: {
       PAINTSTRUCT paint;
       HDC deviceContext = BeginPaint(window, &paint);
-      RECT rect = paint.rcPaint;
-      int x = rect.left;
-      int y = rect.top;
-      int height = rect.bottom - rect.top;
-      int width = rect.right - rect.left;
       win32_window_dimension dimension = Win32GetWindowDimension(window);
-      Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height, x, y, width, height);
+      Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height);
       EndPaint(window, &paint);
       break;
     }
@@ -214,18 +215,62 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
       break;
     }
     default: {
-      result = DefWindowProc(window, message, wParam, lParam);
+      result = DefWindowProcA(window, message, wParam, lParam);
       break;
     }
   }
   return result;
 }
 
+struct win32_sound_output {
+  int samplesPerSecond;
+  int toneHz;
+  uint32_t runningSampleIndex;
+  int wavePeriod;
+  int bytesPerSample;
+  int audioBufferSize;
+  int16_t toneVolume;
+  float_t tSine;
+  int latencySampleCount;
+};
+
+internal void Win32FillSoundBuffer(win32_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite) {
+  VOID *region0;
+  DWORD region0Size;
+  VOID *region1;
+  DWORD region1Size;
+
+  if (SUCCEEDED(audioBuffer->Lock(byteToLock, bytesToWrite, &region0, &region0Size, &region1, &region1Size, 0))) {
+    // TODO assert that region0size/region1size is valid
+    int16_t *sampleOut = (int16_t *)region0;
+    DWORD region0SampleCount = region0Size / soundOutput->bytesPerSample;
+    for (DWORD sampleIndex = 0; sampleIndex < region0SampleCount; ++sampleIndex) {
+      float_t sineValue = sinf(soundOutput->tSine);
+      int16_t sampleValue = (int16_t)(sineValue * soundOutput->toneVolume);
+      *sampleOut++ = sampleValue;
+      *sampleOut++ = sampleValue;
+      soundOutput->tSine += 2.0f * PI * 1.0f / (float_t)soundOutput->wavePeriod;
+      ++soundOutput->runningSampleIndex;
+    }
+    sampleOut = (int16_t *)region1;
+    DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
+    for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+      float_t sineValue = sinf(soundOutput->tSine);
+      int16_t sampleValue = (int16_t)(sineValue * soundOutput->toneVolume);
+      *sampleOut++ = sampleValue;
+      *sampleOut++ = sampleValue;
+      soundOutput->tSine += 2.0f * PI * 1.0f / (float_t)soundOutput->wavePeriod;
+      ++soundOutput->runningSampleIndex;
+    }
+    audioBuffer->Unlock(region0, region0Size, region1, region1Size);
+  }
+}
+
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
   Win32LoadXInput();
   WNDCLASSA WindowClass = {};
   Win32ResizeDIBSection(&backBuffer, 1280, 720);
-  WindowClass.style = CS_HREDRAW | CS_VREDRAW;
+  WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   WindowClass.lpfnWndProc = Win32MainWindowCallback;
   WindowClass.hInstance = instance;
   WindowClass.lpszClassName = "MyWindowClass";
@@ -237,16 +282,19 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
       running = true;
       int xOffset = 0;
       int yOffset = 0;
-      int samplesPerSecond = 48000;
-      int toneHz = 50;
-      uint32_t runningSampleIndex = 0;
-      int squareWavePeriod = samplesPerSecond / toneHz;
-      int halfSquareWavePeriod = squareWavePeriod / 2;
-      int bytesPerSample = sizeof(int16_t) * 2;//waveFormat.nSamples * waveFormat.bytesPerSample
-      int audioBufferSize = samplesPerSecond * bytesPerSample;
-      int16_t toneVolume = 2000;
-      Win32InitDSound(window, samplesPerSecond, audioBufferSize);
+      win32_sound_output soundOutput = {};
+      soundOutput.samplesPerSecond = 48000;
+      soundOutput.toneHz = 256;
+      soundOutput.runningSampleIndex = 0;
+      soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
+      soundOutput.bytesPerSample = sizeof(int16_t) * 2;  // waveFormat.nSamples * waveFormat.bytesPerSample
+      soundOutput.audioBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
+      soundOutput.toneVolume = 5000;
+      soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 15;
+      Win32InitDSound(window, soundOutput.samplesPerSecond, soundOutput.audioBufferSize);
+      Win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
       audioBuffer->Play(0, 0, DSBPLAY_LOOPING);
+      // bool32 soundIsPlaying = false;
       while (running) {
         MSG message;
         while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
@@ -264,24 +312,25 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             // TODO see if state.dwPacketNumber is too big
             XINPUT_GAMEPAD *pad = &state.Gamepad;
 
-            bool up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-            bool down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-            bool left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-            bool right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-            bool start = (pad->wButtons & XINPUT_GAMEPAD_START);
-            bool back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
-            bool leftShoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-            bool rightShoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-            bool A = (pad->wButtons & XINPUT_GAMEPAD_A);
-            bool B = (pad->wButtons & XINPUT_GAMEPAD_B);
-            bool X = (pad->wButtons & XINPUT_GAMEPAD_X);
-            bool Y = (pad->wButtons & XINPUT_GAMEPAD_Y);
+            bool32 up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+            bool32 down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+            bool32 left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+            bool32 right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+            bool32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
+            bool32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+            bool32 leftShoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+            bool32 rightShoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+            bool32 A = (pad->wButtons & XINPUT_GAMEPAD_A);
+            bool32 B = (pad->wButtons & XINPUT_GAMEPAD_B);
+            bool32 X = (pad->wButtons & XINPUT_GAMEPAD_X);
+            bool32 Y = (pad->wButtons & XINPUT_GAMEPAD_Y);
             int16_t stickX = pad->sThumbLX;
             int16_t stickY = pad->sThumbLY;
 
-            xOffset += stickX >> 13;
-            yOffset += stickY >> 13;
-
+            xOffset += stickX /4096;
+            yOffset += stickY /4096;
+            soundOutput.toneHz = 512 + (int)(256.0f * ((float_t)stickX / 30000.f));
+            soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
           } else {
             // Controller is not connected
           }
@@ -295,44 +344,20 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         DWORD playCursor;
         DWORD writeCursor;
         if (SUCCEEDED(audioBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
-          DWORD byteToLock = runningSampleIndex * bytesPerSample % audioBufferSize;
+          DWORD byteToLock = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.audioBufferSize;
+          DWORD targetCursor = (playCursor +(soundOutput.latencySampleCount * soundOutput.bytesPerSample))% soundOutput.audioBufferSize;
           DWORD bytesToWrite;
-          if (byteToLock > playCursor) {
-            bytesToWrite = audioBufferSize - byteToLock;
-            bytesToWrite += playCursor;
+          if (byteToLock > targetCursor) {
+            bytesToWrite = soundOutput.audioBufferSize - byteToLock;
+            bytesToWrite += targetCursor;
           } else {
-            bytesToWrite = playCursor - byteToLock;
+            bytesToWrite = targetCursor - byteToLock;
           }
-
-          VOID *region0;
-          DWORD region0Size;
-          VOID *region1;
-          DWORD region1Size;
-
-          if (SUCCEEDED(
-                  audioBuffer->Lock(byteToLock, bytesToWrite, &region0, &region0Size, &region1, &region1Size, 0))) {
-            // TODO assert that region0size/region1size is valid
-            int16_t *sampleOut = (int16_t *)region0;
-            DWORD region0SampleCount = region0Size / bytesPerSample;
-            for (DWORD sampleIndex = 0; sampleIndex < region0SampleCount; ++sampleIndex) {
-              int16_t sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? toneVolume : -toneVolume;
-              *sampleOut++ = sampleValue;
-              *sampleOut++ = sampleValue;
-            }
-            sampleOut = (int16_t *)region1;
-            DWORD region1SampleCount = region1Size / bytesPerSample;
-            for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-              int16_t sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? toneVolume : -toneVolume;
-              *sampleOut++ = sampleValue;
-              *sampleOut++ = sampleValue;
-            }
-            audioBuffer->Unlock(region0, region0Size, region1, region1Size);
-          }
+          Win32FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite);
         }
         win32_window_dimension dimension = Win32GetWindowDimension(window);
-        Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height, 0, 0, dimension.width,
-                                   dimension.height);
-        ReleaseDC(window, deviceContext);
+        Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height);
+        // ReleaseDC(window, deviceContext);
         // ++xOffset;
         // ++yOffset;
       }
