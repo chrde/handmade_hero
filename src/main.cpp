@@ -1,6 +1,7 @@
 #include <dsound.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <windows.h>
 #include <xinput.h>
 #define internal static
@@ -267,6 +268,9 @@ internal void Win32FillSoundBuffer(win32_sound_output *soundOutput, DWORD byteTo
 }
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+  LARGE_INTEGER perfCountFrequencyResult;
+  QueryPerformanceFrequency(&perfCountFrequencyResult);
+  int64_t perfCountFrequency = perfCountFrequencyResult.QuadPart;
   Win32LoadXInput();
   WNDCLASSA WindowClass = {};
   Win32ResizeDIBSection(&backBuffer, 1280, 720);
@@ -295,6 +299,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
       Win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
       audioBuffer->Play(0, 0, DSBPLAY_LOOPING);
       // bool32 soundIsPlaying = false;
+      LARGE_INTEGER lastCounter;
+      QueryPerformanceCounter(&lastCounter);
+      uint64_t lastCycleCount = __rdtsc();
       while (running) {
         MSG message;
         while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
@@ -327,8 +334,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             int16_t stickX = pad->sThumbLX;
             int16_t stickY = pad->sThumbLY;
 
-            xOffset += stickX /4096;
-            yOffset += stickY /4096;
+            xOffset += stickX / 4096;
+            yOffset += stickY / 4096;
             soundOutput.toneHz = 512 + (int)(256.0f * ((float_t)stickX / 30000.f));
             soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
           } else {
@@ -344,8 +351,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         DWORD playCursor;
         DWORD writeCursor;
         if (SUCCEEDED(audioBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
-          DWORD byteToLock = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.audioBufferSize;
-          DWORD targetCursor = (playCursor +(soundOutput.latencySampleCount * soundOutput.bytesPerSample))% soundOutput.audioBufferSize;
+          DWORD byteToLock =
+              (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.audioBufferSize;
+          DWORD targetCursor = (playCursor + (soundOutput.latencySampleCount * soundOutput.bytesPerSample)) %
+                               soundOutput.audioBufferSize;
           DWORD bytesToWrite;
           if (byteToLock > targetCursor) {
             bytesToWrite = soundOutput.audioBufferSize - byteToLock;
@@ -357,9 +366,19 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         }
         win32_window_dimension dimension = Win32GetWindowDimension(window);
         Win32DisplayBufferInWindow(&backBuffer, deviceContext, dimension.width, dimension.height);
-        // ReleaseDC(window, deviceContext);
-        // ++xOffset;
-        // ++yOffset;
+        uint64_t endCycleCount = __rdtsc();
+        LARGE_INTEGER endCounter;
+        QueryPerformanceCounter(&endCounter);
+        uint64_t cyclesElapsed = endCycleCount - lastCycleCount;
+        int64_t counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
+        float_t msPerFrame = (1000.0f * (float_t)counterElapsed) / (float_t)perfCountFrequency;
+        float_t fps = (float_t)perfCountFrequency / (float_t)counterElapsed;
+        float_t MCPF = ((float_t)cyclesElapsed / (1000.0f * 1000.0f));
+        char buffer[256];
+        sprintf(buffer, " %.02fms/f, %.02fFPS, %.02fmc/f\n", msPerFrame, fps, MCPF);
+        OutputDebugStringA(buffer);
+        lastCounter = endCounter;
+        lastCycleCount = endCycleCount;
       }
     } else {
       // TODO logging
