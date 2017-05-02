@@ -1,13 +1,17 @@
-#include <dsound.h>
-#include <math.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <windows.h>
-#include <xinput.h>
 #define internal static
 #define local_persist static
 #define global_variable static
 #define PI 3.14159265359f
+
+#include "handmade.cpp"
+
+#include <dsound.h>
+#include <math.h>
+#include <stdio.h>
+#include <windows.h>
+#include <xinput.h>
+
 typedef int32_t bool32;
 
 struct win32_offscreen_buffer {
@@ -23,20 +27,6 @@ struct win32_offscreen_buffer {
 global_variable bool32 running;
 global_variable win32_offscreen_buffer backBuffer;
 global_variable LPDIRECTSOUNDBUFFER audioBuffer;
-
-internal void renderSomething(win32_offscreen_buffer *buffer, int xOffset, int yOffset) {
-  uint8_t *row = (uint8_t *)buffer->memory;
-  for (int y = 0; y < buffer->height; ++y) {
-    uint32_t *pixel = (uint32_t *)row;
-    for (int x = 0; x < buffer->width; ++x) {
-      uint8_t green = y + yOffset;
-      uint8_t blue = x + xOffset;
-      *pixel = ((green << 8) | blue);
-      ++pixel;
-    }
-    row += buffer->pitch;
-  }
-}
 
 struct win32_window_dimension {
   int width;
@@ -345,8 +335,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         XINPUT_VIBRATION vibration;
         vibration.wLeftMotorSpeed = 60000;
         vibration.wRightMotorSpeed = 60000;
-        // XInputSetState(0, &vibration);
-        renderSomething(&backBuffer, xOffset, yOffset);
+        XInputSetState(0, &vibration);
+        game_offscreen_buffer gameBuffer = {};
+        gameBuffer.memory = backBuffer.memory;
+        gameBuffer.width = backBuffer.width;
+        gameBuffer.height = backBuffer.height;
+        gameBuffer.pitch = backBuffer.pitch;
+        GameUpdateAndRender(&gameBuffer, xOffset, yOffset);
 
         DWORD playCursor;
         DWORD writeCursor;
