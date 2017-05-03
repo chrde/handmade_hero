@@ -29,7 +29,21 @@ internal void renderSomething(game_offscreen_buffer *buffer, int xOffset, int yO
   }
 }
 
-internal void GameUpdateAndRender(game_offscreen_buffer *buffer, game_sound_output_buffer *soundBuffer, int blueOffset, int greenOffset, int toneHz) {
+internal void GameUpdateAndRender(game_offscreen_buffer *buffer, game_sound_output_buffer *soundBuffer, game_input *input) {
+  local_persist int blueOffset= 0;
+  local_persist int greenOffset= 0;
+  local_persist int toneHz= 250;
+
+  game_controller_input *input0 = &input->controllers[0];
+  if (input0->isAnalog){
+    toneHz = 256 + (int)(128.0f * input0->endY);
+    blueOffset += (int)(4.0f * input0->endX);
+  } else {
+
+  }
+  if(input0->down.endedDown){
+    greenOffset +=1;
+  }
   gameOutputSound(soundBuffer, toneHz);
   renderSomething(buffer, blueOffset, greenOffset);
 }
