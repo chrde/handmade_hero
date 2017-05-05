@@ -41,6 +41,48 @@ global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
+internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename) {
+debug_read_file_result result = {};
+  HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+  if (fileHandle != INVALID_HANDLE_VALUE) {
+    LARGE_INTEGER fileSize;
+    if (GetFileSizeEx(fileHandle, &fileSize)) {
+      uint32_t fileSize32 = safeTruncateUInt64(fileSize.QuadPart);
+      result.contents = VirtualAlloc(0, fileSize32, MEM_COMMIT, PAGE_READWRITE);
+      if (result.contents) {
+        DWORD bytesRead;
+        if (ReadFile(fileHandle, result.contents, fileSize32, &bytesRead, 0) && (fileSize32 == bytesRead)) {
+          result.contentsSize = fileSize32;
+        } else {
+          DEBUGPlatformFreeFileMemory(result.contents);
+          result.contents = 0;
+        }
+      }
+    }
+    CloseHandle(fileHandle);
+  }
+  return result;
+}
+internal void DEBUGPlatformFreeFileMemory(void *memory) {
+  if (memory) {
+    VirtualFree(memory, 0, MEM_RELEASE);
+  }
+}
+internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32_t memorySize, void *memory) {
+  bool32 result = false;
+  HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+  if (fileHandle != INVALID_HANDLE_VALUE) {
+    DWORD bytesWritten;
+    if (WriteFile(fileHandle, memory, memorySize, &bytesWritten, 0)) {
+      result = (bytesWritten == memorySize);
+    } else {
+    }
+    CloseHandle(fileHandle);
+  } else {
+  }
+  return result;
+}
+
 internal void Win32LoadXInput(void) {
   HMODULE xInputLibrary = LoadLibraryA("xinput1_4.dll");
   if (!xInputLibrary) {

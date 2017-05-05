@@ -1,4 +1,13 @@
 #if !defined(HANDMADE_H)
+#if HANDMADE_INTERNAL
+struct debug_read_file_result{
+  uint32_t contentsSize;
+  void *contents;
+};
+internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename);
+internal void DEBUGPlatformFreeFileMemory(void *memory);
+internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32_t memorySize, void *memory);
+#endif
 #if HANDMADE_SLOW
 #define assert(exp) \
   if (!(exp)) {     \
@@ -13,6 +22,13 @@
 #define Megabytes(value) (Kilobytes(value) * 1024LL)
 #define Terabytes(value) (Gigabytes(value) * 1024LL)
 #define Gigabytes(value) (Megabytes(value) * 1024LL)
+
+inline uint32_t safeTruncateUInt64(uint64_t value) {
+  assert(value < 0xFFFFFFFF);
+  uint32_t fileSize32 = (uint32_t)value;
+  return fileSize32;
+}
+
 struct game_offscreen_buffer {
   // NOTE pixels are always 32bits wide, Memory order BB GG RR XX
   void *memory;

@@ -33,6 +33,12 @@ internal void GameUpdateAndRender(game_memory *memory, game_offscreen_buffer *bu
                                   game_sound_output_buffer *soundBuffer, game_input *input) {
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
+    char *filename = __FILE__;
+    debug_read_file_result file = DEBUGPlatformReadEntireFile(filename);
+    if (file.contents) {
+      DEBUGPlatformWriteEntireFile("C:/Users/ext-delach/github/handmade_hero/src/handmade_copy.cpp", file.contentsSize, file.contents);
+      DEBUGPlatformFreeFileMemory(file.contents);
+    }
     gameState->toneHz = 256;
     memory->isInitialized = true;
   }
