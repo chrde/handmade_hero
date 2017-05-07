@@ -47,30 +47,36 @@ struct game_button_state {
   bool32 endedDown;
 };
 struct game_controller_input {
+  bool32 isConnected;
   bool32 isAnalog;
-  float_t startX;
-  float_t startY;
-  float_t minX;
-  float_t minY;
-  float_t maxX;
-  float_t maxY;
-  float_t endX;
-  float_t endY;
+  float_t stickAverageX;
+  float_t stickAverageY;
   union {
-    game_button_state buttons[6];
+    game_button_state buttons[12];
     struct {
-      game_button_state up;
-      game_button_state down;
-      game_button_state left;
-      game_button_state right;
+      game_button_state moveUp;
+      game_button_state moveDown;
+      game_button_state moveLeft;
+      game_button_state moveRight;
+      game_button_state actionUp;
+      game_button_state actionDown;
+      game_button_state actionLeft;
+      game_button_state actionRight;
       game_button_state leftShoulder;
       game_button_state rightShoulder;
+      game_button_state start;
+      game_button_state back;
     };
   };
 };
 struct game_input {
-  game_controller_input controllers[4];
+  game_controller_input controllers[5];
 };
+inline game_controller_input *getController(game_input *input, int unsigned controllerIndex){
+  assert(controllerIndex < arrayCount(input->controllers));
+  game_controller_input *controller = &input->controllers[controllerIndex];
+  return controller;
+}
 struct game_state {
   int toneHz;
   int greenOffset;

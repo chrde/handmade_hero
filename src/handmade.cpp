@@ -31,27 +31,43 @@ internal void renderSomething(game_offscreen_buffer *buffer, int xOffset, int yO
 
 internal void GameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer,
                                   game_sound_output_buffer *soundBuffer, game_input *input) {
+  assert(sizeof(game_state) <= memory->permanentStorageSize);
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
     char *filename = __FILE__;
     debug_read_file_result file = DEBUGPlatformReadEntireFile(filename);
     if (file.contents) {
-      DEBUGPlatformWriteEntireFile("C:/Users/ext-delach/github/handmade_hero/src/handmade_copy.cpp", file.contentsSize, file.contents);
+      DEBUGPlatformWriteEntireFile("C:/Users/chrde/github/handmade_hero/src/handmade_copy.cpp", file.contentsSize, file.contents);
       DEBUGPlatformFreeFileMemory(file.contents);
     }
     gameState->toneHz = 256 ;
     memory->isInitialized = true;
   }
 
-  game_controller_input *input0 = &input->controllers[0];
-  if (input0->isAnalog) {
-    gameState->toneHz = 256 + (int)(128.0f * input0->endY);
-    gameState->blueOffset += (int)(4.0f * input0->endX);
+for(int controllerIndex= 0; controllerIndex < arrayCount(input->controllers); ++controllerIndex){
+
+  game_controller_input *controller = getController(input, controllerIndex);
+  if (controller->isAnalog) {
+    gameState->toneHz = 256 + (int)(128.0f * controller->stickAverageY);
+    gameState->blueOffset += (int)(4.0f * controller->stickAverageX);
   } else {
+    if(controller->moveLeft.endedDown){
+      gameState->blueOffset +=1;
+    }
+    if(controller->moveRight.endedDown){
+      gameState->blueOffset -=1;
+    }
+    if(controller->moveUp.endedDown){
+      gameState->greenOffset +=1;
+    }
+    if(controller->moveDown.endedDown){
+      gameState->greenOffset -=1;
+    }
   }
-  if (input0->down.endedDown) {
+  if (controller->actionDown.endedDown) {
     gameState->greenOffset += 1;
   }
+}
   gameOutputSound(soundBuffer, gameState->toneHz);
   renderSomething(buffer, gameState->blueOffset, gameState->greenOffset);
 }
