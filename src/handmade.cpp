@@ -20,8 +20,8 @@ internal void renderSomething(game_offscreen_buffer *buffer, int xOffset, int yO
   for (int y = 0; y < buffer->height; ++y) {
     uint32_t *pixel = (uint32_t *)row;
     for (int x = 0; x < buffer->width; ++x) {
-      uint8_t green = y + yOffset;
-      uint8_t blue = x + xOffset;
+      uint8_t green = (uint8_t)(y + yOffset);
+      uint8_t blue = (uint8_t)(x + xOffset);
       *pixel = ((green << 8) | blue);
       ++pixel;
     }
@@ -39,7 +39,7 @@ internal void GameUpdateAndRender(game_memory *memory, game_offscreen_buffer *bu
       DEBUGPlatformWriteEntireFile("C:/Users/ext-delach/github/handmade_hero/src/handmade_copy.cpp", file.contentsSize, file.contents);
       DEBUGPlatformFreeFileMemory(file.contents);
     }
-    gameState->toneHz = 256;
+    gameState->toneHz = 256 ;
     memory->isInitialized = true;
   }
 
