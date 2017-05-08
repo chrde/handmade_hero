@@ -8,6 +8,7 @@ struct win32_offscreen_buffer {
   int width;
   int height;
   int pitch;
+  int bytesPerPixel;
 };
 struct win32_window_dimension {
   int width;
@@ -22,6 +23,11 @@ struct win32_sound_output {
   int audioBufferSize;
   float_t tSine;
   int latencySampleCount;
+};
+
+struct win32_debug_time_marker{
+  DWORD playCursor;
+  DWORD writeCursor;
 };
 
 #define MAIN_H
