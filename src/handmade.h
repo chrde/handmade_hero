@@ -89,9 +89,9 @@ struct game_memory {
   uint64_t transientStorageSize;
   void *transientStorage;
 };
-internal void GameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer,
-                                  game_sound_output_buffer *soundBuffer, game_input *input);
+internal void gameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer, game_input *input);
 internal void gameOutputSound(game_sound_output_buffer *soundBuffer, int toneHz);
+internal void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer *soundBuffer);
 
 #define HANDMADE_H
 #endif

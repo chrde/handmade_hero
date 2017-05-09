@@ -21,6 +21,7 @@ struct win32_sound_output {
   uint32_t runningSampleIndex;
   int bytesPerSample;
   int audioBufferSize;
+  int safetyBytes;
   float_t tSine;
   int latencySampleCount;
 };

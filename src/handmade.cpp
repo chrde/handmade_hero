@@ -29,8 +29,7 @@ internal void renderSomething(game_offscreen_buffer *buffer, int xOffset, int yO
   }
 }
 
-internal void GameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer,
-                                  game_sound_output_buffer *soundBuffer, game_input *input) {
+internal void gameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer, game_input *input) {
   assert(sizeof(game_state) <= memory->permanentStorageSize);
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
@@ -68,6 +67,11 @@ for(int controllerIndex= 0; controllerIndex < arrayCount(input->controllers); ++
     gameState->greenOffset += 1;
   }
 }
-  gameOutputSound(soundBuffer, gameState->toneHz);
   renderSomething(buffer, gameState->blueOffset, gameState->greenOffset);
+}
+
+internal void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer *soundBuffer){
+  game_state *gameState = (game_state *)memory->permanentStorage;
+  gameOutputSound(soundBuffer, gameState->toneHz);
+
 }
