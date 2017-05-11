@@ -84,18 +84,18 @@ struct win32_game_code {
   game_get_sound_samples *getSoundSamples;
   bool32 isValid;
 };
-internal win32_game_code Win32UnloadGameCode(win32_game_code *gameCode) {
-  if (gameCode->gameCodeDLL) {
-    FreeLibrary(gameCode->gameCodeDLL);
-  }
-  gameCode->isValid = false;
-  gameCode->updateAndRender = gameUpdateAndRenderStub;
-  gameCode->getSoundSamples = gameGetSoundSamplesStub;
-}
+// internal win32_game_code Win32UnloadGameCode(win32_game_code *gameCode) {
+//   if (gameCode->gameCodeDLL) {
+//     FreeLibrary(gameCode->gameCodeDLL);
+//   }
+//   gameCode->isValid = false;
+//   gameCode->updateAndRender = gameUpdateAndRenderStub;
+//   gameCode->getSoundSamples = gameGetSoundSamplesStub;
+// }
 
 internal win32_game_code Win32LoadGameCode(void) {
   win32_game_code result = {};
-  result.gameCodeDLL = LoadLibraryA("handmade.exe");
+  result.gameCodeDLL = LoadLibraryA("handmade.dll");
   if (result.gameCodeDLL) {
     result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
     result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
