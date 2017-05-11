@@ -1,17 +1,16 @@
 #include "handmade.h"
 
-internal void gameOutputSound(game_sound_output_buffer *soundBuffer, int toneHz) {
-  local_persist float_t tSine;
+internal void gameOutputSound(game_sound_output_buffer *soundBuffer, game_state *gameState) {
   int16_t toneVolume = 3000;
-  int wavePeriod = soundBuffer->samplesPerSecond / toneHz;
+  int wavePeriod = soundBuffer->samplesPerSecond / gameState->toneHz;
 
   int16_t *sample = soundBuffer->samples;
   for (int sampleIndex = 0; sampleIndex < soundBuffer->sampleCount; ++sampleIndex) {
-    float_t sineValue = sinf(tSine);
+    float_t sineValue = sinf(gameState->tSine);
     int16_t sampleValue = (int16_t)(sineValue * toneVolume);
     *sample++ = sampleValue;
     *sample++ = sampleValue;
-    tSine += 2.0f * PI * 1.0f / (float_t)wavePeriod;
+    gameState->tSine += 2.0f * PI * 1.0f / (float_t)wavePeriod;
   }
 }
 
@@ -29,49 +28,54 @@ internal void renderSomething(game_offscreen_buffer *buffer, int xOffset, int yO
   }
 }
 
-internal void gameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer, game_input *input) {
+extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   assert(sizeof(game_state) <= memory->permanentStorageSize);
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
     char *filename = __FILE__;
-    debug_read_file_result file = DEBUGPlatformReadEntireFile(filename);
+    debug_read_file_result file = memory->DEBUGPlatformReadEntireFile(filename);
     if (file.contents) {
-      DEBUGPlatformWriteEntireFile("C:/Users/chrde/github/handmade_hero/src/handmade_copy.cpp", file.contentsSize, file.contents);
-      DEBUGPlatformFreeFileMemory(file.contents);
+      memory->DEBUGPlatformWriteEntireFile("C:/Users/chrde/github/handmade_hero/src/handmade_copy.cpp",
+                                           file.contentsSize, file.contents);
+      memory->DEBUGPlatformFreeFileMemory(file.contents);
     }
-    gameState->toneHz = 256 ;
+    gameState->toneHz = 256;
+    gameState->tSine = 0.0f;
     memory->isInitialized = true;
   }
 
-for(int controllerIndex= 0; controllerIndex < arrayCount(input->controllers); ++controllerIndex){
-
-  game_controller_input *controller = getController(input, controllerIndex);
-  if (controller->isAnalog) {
-    gameState->toneHz = 256 + (int)(128.0f * controller->stickAverageY);
-    gameState->blueOffset += (int)(4.0f * controller->stickAverageX);
-  } else {
-    if(controller->moveLeft.endedDown){
-      gameState->blueOffset +=1;
+  for (int controllerIndex = 0; controllerIndex < arrayCount(input->controllers); ++controllerIndex) {
+    game_controller_input *controller = getController(input, controllerIndex);
+    if (controller->isAnalog) {
+      gameState->toneHz = 256 + (int)(128.0f * controller->stickAverageY);
+      gameState->blueOffset += (int)(4.0f * controller->stickAverageX);
+    } else {
+      if (controller->moveLeft.endedDown) {
+        gameState->blueOffset += 1;
+      }
+      if (controller->moveRight.endedDown) {
+        gameState->blueOffset -= 1;
+      }
+      if (controller->moveUp.endedDown) {
+        gameState->greenOffset += 1;
+      }
+      if (controller->moveDown.endedDown) {
+        gameState->greenOffset -= 1;
+      }
     }
-    if(controller->moveRight.endedDown){
-      gameState->blueOffset -=1;
-    }
-    if(controller->moveUp.endedDown){
-      gameState->greenOffset +=1;
-    }
-    if(controller->moveDown.endedDown){
-      gameState->greenOffset -=1;
+    if (controller->actionDown.endedDown) {
+      gameState->greenOffset += 1;
     }
   }
-  if (controller->actionDown.endedDown) {
-    gameState->greenOffset += 1;
-  }
-}
   renderSomething(buffer, gameState->blueOffset, gameState->greenOffset);
 }
 
-internal void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer *soundBuffer){
+extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {
   game_state *gameState = (game_state *)memory->permanentStorage;
-  gameOutputSound(soundBuffer, gameState->toneHz);
-
+  gameOutputSound(soundBuffer, gameState);
 }
+
+#if HANDMADE_WIN
+#include "windows.h"
+BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpvReserved) { return TRUE; }
+#endif

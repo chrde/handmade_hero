@@ -1,12 +1,17 @@
 #if !defined(HANDMADE_H)
+#include <math.h>
+#include <stdint.h>
+#define internal static
+#define local_persist static
+#define global_variable static
+#define PI 3.14159265359f
+typedef int32_t bool32;
+
 #if HANDMADE_INTERNAL
-struct debug_read_file_result{
+struct debug_read_file_result {
   uint32_t contentsSize;
   void *contents;
 };
-internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename);
-internal void DEBUGPlatformFreeFileMemory(void *memory);
-internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32_t memorySize, void *memory);
 #endif
 #if HANDMADE_SLOW
 #define assert(exp) \
@@ -72,7 +77,7 @@ struct game_controller_input {
 struct game_input {
   game_controller_input controllers[5];
 };
-inline game_controller_input *getController(game_input *input, int unsigned controllerIndex){
+inline game_controller_input *getController(game_input *input, int unsigned controllerIndex) {
   assert(controllerIndex < arrayCount(input->controllers));
   game_controller_input *controller = &input->controllers[controllerIndex];
   return controller;
@@ -81,17 +86,31 @@ struct game_state {
   int toneHz;
   int greenOffset;
   int blueOffset;
+  float_t tSine;
 };
+#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *filename)
+typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool32 name(char *filename, uint32_t memorySize, void *memory)
+typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 struct game_memory {
   bool32 isInitialized;
   uint64_t permanentStorageSize;
   void *permanentStorage;
   uint64_t transientStorageSize;
   void *transientStorage;
+  debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
+  debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
+  debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
 };
-internal void gameUpdateAndRender(game_memory *memory, game_offscreen_buffer *buffer, game_input *input);
-internal void gameOutputSound(game_sound_output_buffer *soundBuffer, int toneHz);
-internal void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer *soundBuffer);
+
+#define GAME_UPDATE_AND_RENDER(name) void name(game_memory *memory, game_offscreen_buffer *buffer, game_input *input)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+GAME_UPDATE_AND_RENDER(gameUpdateAndRenderStub) {}
+#define GAME_GET_SOUND_SAMPLES(name) void name(game_memory *memory, game_sound_output_buffer *soundBuffer)
+typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+GAME_GET_SOUND_SAMPLES(gameGetSoundSamplesStub) {}
 
 #define HANDMADE_H
-#endif
+#endif  {}

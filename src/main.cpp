@@ -1,12 +1,4 @@
-#include <math.h>
-#include <stdint.h>
-#define internal static
-#define local_persist static
-#define global_variable static
-#define PI 3.14159265359f
-typedef int32_t bool32;
-
-#include "handmade.cpp"
+#include "handmade.h"
 
 #include <dsound.h>
 #include <stdio.h>
@@ -43,7 +35,12 @@ global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
-internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename) {
+DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory) {
+  if (memory) {
+    VirtualFree(memory, 0, MEM_RELEASE);
+  }
+}
+DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile) {
   debug_read_file_result result = {};
   HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
   if (fileHandle != INVALID_HANDLE_VALUE) {
@@ -66,13 +63,7 @@ internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename) {
   return result;
 }
 
-internal void DEBUGPlatformFreeFileMemory(void *memory) {
-  if (memory) {
-    VirtualFree(memory, 0, MEM_RELEASE);
-  }
-}
-
-internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32_t memorySize, void *memory) {
+DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile) {
   bool32 result = false;
   HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
   if (fileHandle != INVALID_HANDLE_VALUE) {
@@ -83,6 +74,36 @@ internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32_t memorySize
     }
     CloseHandle(fileHandle);
   } else {
+  }
+  return result;
+}
+
+struct win32_game_code {
+  HMODULE gameCodeDLL;
+  game_update_and_render *updateAndRender;
+  game_get_sound_samples *getSoundSamples;
+  bool32 isValid;
+};
+internal win32_game_code Win32UnloadGameCode(win32_game_code *gameCode) {
+  if (gameCode->gameCodeDLL) {
+    FreeLibrary(gameCode->gameCodeDLL);
+  }
+  gameCode->isValid = false;
+  gameCode->updateAndRender = gameUpdateAndRenderStub;
+  gameCode->getSoundSamples = gameGetSoundSamplesStub;
+}
+
+internal win32_game_code Win32LoadGameCode(void) {
+  win32_game_code result = {};
+  result.gameCodeDLL = LoadLibraryA("handmade.exe");
+  if (result.gameCodeDLL) {
+    result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
+    result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
+    result.isValid = result.updateAndRender && result.getSoundSamples;
+  }
+  if (!result.isValid) {
+    result.updateAndRender = gameUpdateAndRenderStub;
+    result.getSoundSamples = gameGetSoundSamplesStub;
   }
   return result;
 }
@@ -387,9 +408,9 @@ internal bool32 Win32SetWindowsSchedulerGranularity(int unsigned desiredGranular
 
 inline void Win32DebugDrawVertical(win32_offscreen_buffer *globalBackBuffer, int x, int top, int bottom,
                                    uint32_t color) {
-  top = (top <= 0 ) ? 0 : top;
+  top = (top <= 0) ? 0 : top;
   bottom = (bottom >= globalBackBuffer->height) ? globalBackBuffer->height : bottom;
-  if((x>= 0) && (x < globalBackBuffer->width)){
+  if ((x >= 0) && (x < globalBackBuffer->width)) {
     uint8_t *pixel =
         (uint8_t *)globalBackBuffer->memory + x * globalBackBuffer->bytesPerPixel + top * globalBackBuffer->pitch;
     for (int y = top; y < bottom; ++y) {
@@ -406,7 +427,8 @@ inline void Win32DrawSoundBufferMarker(win32_offscreen_buffer *globalBackBuffer,
 }
 
 internal void Win32DebugSyncDisplay(win32_offscreen_buffer *globalBackBuffer, win32_sound_output *soundBuffer,
-                                    int markersCount, win32_debug_time_marker *markers, int currentMarkerIndex, float_t targetSecondsPerFrame) {
+                                    int markersCount, win32_debug_time_marker *markers, int currentMarkerIndex,
+                                    float_t targetSecondsPerFrame) {
   int padX = 16;
   int padY = 16;
   int lineHeight = 64;
@@ -419,7 +441,7 @@ internal void Win32DebugSyncDisplay(win32_offscreen_buffer *globalBackBuffer, wi
     DWORD playWindowColor = 0xFFFF00FF;
     int top = padY;
     int bottom = padY + lineHeight;
-    if(markerIndex == currentMarkerIndex){
+    if (markerIndex == currentMarkerIndex) {
       top += lineHeight + padY;
       bottom += lineHeight + padY;
       int firstTop = top;
@@ -428,26 +450,28 @@ internal void Win32DebugSyncDisplay(win32_offscreen_buffer *globalBackBuffer, wi
       top += lineHeight + padY;
       bottom += lineHeight + padY;
       Win32DrawSoundBufferMarker(globalBackBuffer, marker->byteToLock, c, padX, top, bottom, playColor);
-      Win32DrawSoundBufferMarker(globalBackBuffer, marker->byteToLock + marker->bytesToWrite, c, padX, top, bottom, writeColor);
+      Win32DrawSoundBufferMarker(globalBackBuffer, marker->byteToLock + marker->bytesToWrite, c, padX, top, bottom,
+                                 writeColor);
       top += lineHeight + padY;
       bottom += lineHeight + padY;
-      Win32DrawSoundBufferMarker(globalBackBuffer, marker->expectedFlipPlayCursor, c, padX, firstTop, bottom, expectedFlipColor);
+      Win32DrawSoundBufferMarker(globalBackBuffer, marker->expectedFlipPlayCursor, c, padX, firstTop, bottom,
+                                 expectedFlipColor);
     }
     Win32DrawSoundBufferMarker(globalBackBuffer, marker->flipPlayCursor, c, padX, top, bottom, playColor);
-    Win32DrawSoundBufferMarker(globalBackBuffer, marker->flipPlayCursor + 480*soundBuffer->bytesPerSample, c, padX, top, bottom, playWindowColor);
+    Win32DrawSoundBufferMarker(globalBackBuffer, marker->flipPlayCursor + 480 * soundBuffer->bytesPerSample, c, padX,
+                               top, bottom, playWindowColor);
     Win32DrawSoundBufferMarker(globalBackBuffer, marker->flipWriteCursor, c, padX, top, bottom, writeColor);
   }
 }
 
-internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
+internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput) {
   game_controller_input *newKeyboardController = getController(newInput, 0);
   game_controller_input *oldKeyboardController = getController(oldInput, 0);
   *newKeyboardController = {};
   newKeyboardController->isConnected = true;
 
   for (int buttonIndex = 0; buttonIndex < arrayCount(newKeyboardController->buttons); ++buttonIndex) {
-    newKeyboardController->buttons[buttonIndex].endedDown =
-        oldKeyboardController->buttons[buttonIndex].endedDown;
+    newKeyboardController->buttons[buttonIndex].endedDown = oldKeyboardController->buttons[buttonIndex].endedDown;
   }
 
   Win32ProcessPendingMessages(newKeyboardController);
@@ -466,10 +490,8 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
       // TODO see if state.dwPacketNumber is too big
       XINPUT_GAMEPAD *pad = &state.Gamepad;
 
-      newController->stickAverageX =
-          Win32ProcessXInputStickValue(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, pad->sThumbLX);
-      newController->stickAverageY =
-          Win32ProcessXInputStickValue(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, pad->sThumbLY);
+      newController->stickAverageX = Win32ProcessXInputStickValue(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, pad->sThumbLX);
+      newController->stickAverageY = Win32ProcessXInputStickValue(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, pad->sThumbLY);
 
       if (newController->stickAverageX != 0.0f || newController->stickAverageY != 0.0f) {
         newController->isAnalog = true;
@@ -515,12 +537,11 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
                                       XINPUT_GAMEPAD_X);
       Win32ProcessXInputDigitalButton(&oldController->leftShoulder, &newController->leftShoulder, pad->wButtons,
                                       XINPUT_GAMEPAD_LEFT_SHOULDER);
-      Win32ProcessXInputDigitalButton(&oldController->rightShoulder, &newController->rightShoulder,
-                                      pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
+      Win32ProcessXInputDigitalButton(&oldController->rightShoulder, &newController->rightShoulder, pad->wButtons,
+                                      XINPUT_GAMEPAD_RIGHT_SHOULDER);
       Win32ProcessXInputDigitalButton(&oldController->start, &newController->start, pad->wButtons,
                                       XINPUT_GAMEPAD_START);
-      Win32ProcessXInputDigitalButton(&oldController->back, &newController->back, pad->wButtons,
-                                      XINPUT_GAMEPAD_BACK);
+      Win32ProcessXInputDigitalButton(&oldController->back, &newController->back, pad->wButtons, XINPUT_GAMEPAD_BACK);
       newController->isConnected = true;
     } else {
       newController->isConnected = false;
@@ -531,7 +552,8 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
   vibration.wRightMotorSpeed = 60000;
 }
 
- int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+  win32_game_code game = Win32LoadGameCode();
   LARGE_INTEGER perfCountFrequencyResult;
   QueryPerformanceFrequency(&perfCountFrequencyResult);
   perfCountFrequency = perfCountFrequencyResult.QuadPart;
@@ -574,6 +596,9 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
       game_memory gameMemory = {};
       gameMemory.permanentStorageSize = Megabytes(64);
       gameMemory.transientStorageSize = Gigabytes(4);
+      gameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
+      gameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
+      gameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
       uint64_t totalSize = gameMemory.permanentStorageSize + gameMemory.transientStorageSize;
       gameMemory.permanentStorage =
           VirtualAlloc(baseAddress, (size_t)totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -596,7 +621,7 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
         while (running) {
           Win32ProcessGamePad(oldInput, newInput);
 #if HANDMADE_INTERNAL
-          if(globalPause){
+          if (globalPause) {
             continue;
           }
 #endif
@@ -607,24 +632,27 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
           gameBuffer.height = backBuffer.height;
           gameBuffer.pitch = backBuffer.pitch;
 
-          gameUpdateAndRender(&gameMemory, &gameBuffer, newInput);
+          game.updateAndRender(&gameMemory, &gameBuffer, newInput);
 
           LARGE_INTEGER audioWallClock = Win32GetWallClock();
           float_t fromFrameBeginToAudioInSeconds = Win32GetSecondsElapsed(flipWallClock, audioWallClock);
           DWORD playCursor;
           DWORD writeCursor;
-          if(SUCCEEDED(audioBuffer->GetCurrentPosition(&playCursor, &writeCursor))){
+          if (SUCCEEDED(audioBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
             if (!soundIsValid) {
               soundBuffer.runningSampleIndex = writeCursor / soundBuffer.bytesPerSample;
               soundIsValid = true;
             }
-            DWORD expectedSoundBytesPerFrame=(soundBuffer.samplesPerSecond * soundBuffer.bytesPerSample)  / gameUpdateHz;
+            DWORD expectedSoundBytesPerFrame =
+                (soundBuffer.samplesPerSecond * soundBuffer.bytesPerSample) / gameUpdateHz;
             float_t secondsLeftUntilFlip = (targetSecondsPerFrame - fromFrameBeginToAudioInSeconds);
-            DWORD expectedBytesUntilFlip = (DWORD)((secondsLeftUntilFlip / targetSecondsPerFrame)*(float_t) expectedSoundBytesPerFrame );
-            DWORD byteToLock = (soundBuffer.runningSampleIndex * soundBuffer.bytesPerSample) % soundBuffer.audioBufferSize;
+            DWORD expectedBytesUntilFlip =
+                (DWORD)((secondsLeftUntilFlip / targetSecondsPerFrame) * (float_t)expectedSoundBytesPerFrame);
+            DWORD byteToLock =
+                (soundBuffer.runningSampleIndex * soundBuffer.bytesPerSample) % soundBuffer.audioBufferSize;
             DWORD expectedFrameBoundaryByte = playCursor + expectedSoundBytesPerFrame;
             DWORD safeWriteCursor = writeCursor;
-            if(safeWriteCursor < playCursor){
+            if (safeWriteCursor < playCursor) {
               safeWriteCursor += soundBuffer.audioBufferSize;
             }
             assert(safeWriteCursor >= playCursor);
@@ -632,7 +660,7 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
 
             bool32 audioCardIsLowLatencty = (safeWriteCursor < expectedFrameBoundaryByte);
             DWORD targetCursor = 0;
-            if(audioCardIsLowLatencty){
+            if (audioCardIsLowLatencty) {
               targetCursor = (expectedFrameBoundaryByte + expectedSoundBytesPerFrame);
             } else {
               targetCursor = (writeCursor + expectedSoundBytesPerFrame + soundBuffer.safetyBytes);
@@ -649,7 +677,7 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
             gameSoundBuffer.samplesPerSecond = soundBuffer.samplesPerSecond;
             gameSoundBuffer.sampleCount = bytesToWrite / soundBuffer.bytesPerSample;
             gameSoundBuffer.samples = samples;
-            gameGetSoundSamples(&gameMemory, &gameSoundBuffer);
+            game.getSoundSamples(&gameMemory, &gameSoundBuffer);
 #if HANDMADE_INTERNAL
             {
               DWORD aPlayCursor;
@@ -663,11 +691,12 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
               marker->expectedFlipPlayCursor = expectedFrameBoundaryByte;
 
               DWORD unwrappedWriteCursor = aWriteCursor;
-              if(unwrappedWriteCursor < aPlayCursor){
+              if (unwrappedWriteCursor < aPlayCursor) {
                 unwrappedWriteCursor += soundBuffer.audioBufferSize;
               }
               audioLatencyInBytes = unwrappedWriteCursor - aPlayCursor;
-              audioLatencyInSeconds = ((float_t)audioLatencyInBytes /(float_t)soundBuffer.bytesPerSample) / (float_t)soundBuffer.samplesPerSecond; 
+              audioLatencyInSeconds = ((float_t)audioLatencyInBytes / (float_t)soundBuffer.bytesPerSample) /
+                                      (float_t)soundBuffer.samplesPerSecond;
               char buffer[256];
               sprintf_s(buffer, "BTL:%u TC:%u BTW:%u - PC:%u WC: %u DELTA:%fs\n", byteToLock, targetCursor,
                         bytesToWrite, aPlayCursor, aWriteCursor, audioLatencyInSeconds);
@@ -702,8 +731,8 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
           lastCounter = endCounter;
 #if HANDMADE_INTERNAL
           {
-            Win32DebugSyncDisplay(&backBuffer, &soundBuffer, arrayCount(debugTimeMarkers), debugTimeMarkers, debugTimeMarkersIndex - 1,
-                                  targetSecondsPerFrame);
+            Win32DebugSyncDisplay(&backBuffer, &soundBuffer, arrayCount(debugTimeMarkers), debugTimeMarkers,
+                                  debugTimeMarkersIndex - 1, targetSecondsPerFrame);
           }
 #endif
           win32_window_dimension dimension = Win32GetWindowDimension(window);
@@ -712,16 +741,16 @@ internal void Win32ProcessGamePad(game_input *oldInput, game_input *newInput){
 
 #if HANDMADE_INTERNAL
           {
-          DWORD aPlayCursor;
-          DWORD aWriteCursor;
-          if (SUCCEEDED(audioBuffer->GetCurrentPosition(&aPlayCursor, &aWriteCursor))) {
-            win32_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkersIndex++];
-            if (debugTimeMarkersIndex >= arrayCount(debugTimeMarkers)) {
-              debugTimeMarkersIndex = 0;
+            DWORD aPlayCursor;
+            DWORD aWriteCursor;
+            if (SUCCEEDED(audioBuffer->GetCurrentPosition(&aPlayCursor, &aWriteCursor))) {
+              win32_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkersIndex++];
+              if (debugTimeMarkersIndex >= arrayCount(debugTimeMarkers)) {
+                debugTimeMarkersIndex = 0;
+              }
+              marker->flipPlayCursor = aPlayCursor;
+              marker->flipWriteCursor = aWriteCursor;
             }
-            marker->flipPlayCursor = aPlayCursor;
-            marker->flipWriteCursor = aWriteCursor;
-          }
           }
 #endif
           swap(&(void *)newInput, &(void *)oldInput);

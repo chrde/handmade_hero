@@ -1,6 +1,5 @@
 #if !defined(MAIN_H)
 
-
 struct win32_offscreen_buffer {
   // NOTE pixels are always 32bits wide, Memory order BB GG RR XX
   BITMAPINFO info;
@@ -26,7 +25,7 @@ struct win32_sound_output {
   int latencySampleCount;
 };
 
-struct win32_debug_time_marker{
+struct win32_debug_time_marker {
   DWORD outputPlayCursor;
   DWORD outputWriteCursor;
   DWORD byteToLock;
