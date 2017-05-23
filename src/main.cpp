@@ -53,7 +53,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile) {
         if (ReadFile(fileHandle, result.contents, fileSize32, &bytesRead, 0) && (fileSize32 == bytesRead)) {
           result.contentsSize = fileSize32;
         } else {
-          DEBUGPlatformFreeFileMemory(result.contents);
+          DEBUGPlatformFreeFileMemory(thread, result.contents);
           result.contents = 0;
         }
       }
@@ -78,32 +78,32 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile) {
   return result;
 }
 
-struct win32_game_code {
-  HMODULE gameCodeDLL;
-  game_update_and_render *updateAndRender;
-  game_get_sound_samples *getSoundSamples;
-  bool32 isValid;
-};
-// internal win32_game_code Win32UnloadGameCode(win32_game_code *gameCode) {
-//   if (gameCode->gameCodeDLL) {
-//     FreeLibrary(gameCode->gameCodeDLL);
-//   }
-//   gameCode->isValid = false;
-//   gameCode->updateAndRender = gameUpdateAndRenderStub;
-//   gameCode->getSoundSamples = gameGetSoundSamplesStub;
-// }
+internal win32_game_code Win32UnloadGameCode(win32_game_code *gameCode) {
+  if (gameCode->gameCodeDll) {
+    FreeLibrary(gameCode->gameCodeDll);
+    gameCode->gameCodeDll = 0;
+  }
+  gameCode->isValid = false;
+  gameCode->updateAndRender = 0;
+  gameCode->getSoundSamples = 0;
+}
 
-internal win32_game_code Win32LoadGameCode(void) {
+internal win32_game_code Win32LoadGameCode( char *sourceDLLName, char *tempDLLName){
   win32_game_code result = {};
-  result.gameCodeDLL = LoadLibraryA("handmade.dll");
-  if (result.gameCodeDLL) {
-    result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
-    result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
+  result.dllLastWriteTime = Win32GetLastWriteTime(sourceDLLName);
+
+  CopyFile(sourceDLLName, tempDLLName, FALSE);
+    
+  result.gameCodeDll = LoadLibraryA(tempDLLName);
+
+  if (result.gameCodeDll) {
+    result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDll, "gameUpdateAndRender");
+    result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDll, "gameGetSoundSamples");
     result.isValid = result.updateAndRender && result.getSoundSamples;
   }
   if (!result.isValid) {
-    result.updateAndRender = gameUpdateAndRenderStub;
-    result.getSoundSamples = gameGetSoundSamplesStub;
+    result.updateAndRender = 0;
+    result.getSoundSamples = 0;
   }
   return result;
 }
@@ -207,7 +207,7 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
 internal void Win32DisplayBufferInWindow(win32_offscreen_buffer *buffer, HDC deviceContext, int windowWidth,
                                          int windowHeight) {
   // TODO aspect ratio correction
-  StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer->width, buffer->height, buffer->memory,
+  StretchDIBits(deviceContext, 0, 0, buffer->width, buffer->height, 0, 0, buffer->width, buffer->height, buffer->memory,
                 &buffer->info, DIB_RGB_COLORS, SRCCOPY);
 }
 
