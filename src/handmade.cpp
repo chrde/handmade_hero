@@ -56,7 +56,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     char *filename = __FILE__;
     debug_read_file_result file = memory->DEBUGPlatformReadEntireFile(thread, filename);
     if (file.contents) {
-      memory->DEBUGPlatformWriteEntireFile(thread, "C:/Users/chrde/github/handmade_hero/src/test.out",
+      memory->DEBUGPlatformWriteEntireFile(thread, "test.out",
                                            file.contentsSize, file.contents);
       memory->DEBUGPlatformFreeFileMemory(thread, file.contents);
     }
@@ -70,14 +70,14 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   for (int controllerIndex = 0; controllerIndex < arrayCount(input->controllers); ++controllerIndex) {
     game_controller_input *controller = getController(input, controllerIndex);
     if (controller->isAnalog) {
-      gameState->toneHz = 256 + (int)(128.0f * controller->stickAverageY);
       gameState->blueOffset += (int)(4.0f * controller->stickAverageX);
+      gameState->toneHz = 256 + (int)(128.0f * controller->stickAverageY);
     } else {
       if (controller->moveLeft.endedDown) {
-        gameState->blueOffset += 1;
+        gameState->blueOffset -= 1;
       }
       if (controller->moveRight.endedDown) {
-        gameState->blueOffset -= 1;
+        gameState->blueOffset += 1;
       }
       if (controller->moveUp.endedDown) {
         gameState->greenOffset += 1;
@@ -86,8 +86,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gameState->greenOffset -= 1;
       }
     }
-    gameState->playerX += (int)(4.0f * controller->stickAverageX);
-    gameState->playerY -= (int)(4.0f * controller->stickAverageY);
+    gameState->playerX += (int)(7.0f * controller->stickAverageX);
+    gameState->playerY -= (int)(7.0f * controller->stickAverageY);
     if (gameState->tJump > 0) {
       gameState->playerY += (int)(5.0f * sinf(0.5f * PI * gameState->tJump));
     }
@@ -95,9 +95,6 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       gameState->tJump = 4.0;
     }
     gameState->tJump -= 0.033f;
-    if (controller->actionDown.endedDown) {
-      gameState->greenOffset += 1;
-    }
   }
   renderSomething(buffer, gameState->blueOffset, gameState->greenOffset);
   renderPlayer(buffer, gameState->playerX, gameState->playerY);
