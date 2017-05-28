@@ -792,7 +792,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         game_input input[2] = {};
         game_input *newInput = &input[0];
         game_input *oldInput = &input[1];
-        newInput->secondsToAdvanceOverUpdate = targetSecondsPerFrame;
         LARGE_INTEGER lastCounter = Win32GetWallClock();
         LARGE_INTEGER flipWallClock = Win32GetWallClock();
 
@@ -807,6 +806,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         uint32_t loadCounter = 0;
         uint64_t lastCycleCount = __rdtsc();
         while (running) {
+          newInput->dtForFrame = targetSecondsPerFrame;
           FILETIME newDllWriteTime = Win32GetLastWriteTime(sourceGameCodeDllFullPath);
           if (CompareFileTime(&newDllWriteTime, &game.dllLastWriteTime) != 0) {
             Win32UnloadGameCode(&game);

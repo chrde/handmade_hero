@@ -94,7 +94,7 @@ struct game_controller_input {
 struct game_input {
   game_button_state mouseButtons[5];
   int32_t mouseX, mouseY, mouseZ;
-  float_t secondsToAdvanceOverUpdate;
+  float_t dtForFrame;
   game_controller_input controllers[5];
 };
 
@@ -105,6 +105,8 @@ inline game_controller_input *getController(game_input *input, int unsigned cont
 }
 
 struct game_state {
+  float_t playerX;
+  float_t playerY;
 };
 
 struct game_memory {
