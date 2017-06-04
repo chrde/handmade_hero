@@ -1,6 +1,6 @@
 @echo off
 call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat" x64
-set commonCompilerFlags=-MTd -Gm- -GR- -EHa- -Od -Oi -Z7 -FC -nologo
+set commonCompilerFlags=-MTd -Gm- -GR- -EHa- -Od -Oi -fp:fast -Z7 -FC -nologo
 set compilerFlags=%commonCompilerFlags% -Femain -Fmmain.map
 set compilerFlagsForGame=%commonCompilerFlags% -Fehandmade -Fmhandmade.map  
 set commonLinkerFlags=/link -incremental:no -opt:ref

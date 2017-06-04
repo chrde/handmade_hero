@@ -128,11 +128,11 @@ internal void Win32LoadXInput(void) {
   }
   if (xInputLibrary) {
     XInputGetState = (x_input_get_state *)GetProcAddress(xInputLibrary, "XInputGetState");
-    if(!XInputGetState){
+    if (!XInputGetState) {
       XInputGetState = XInputGetStateStub;
     }
     XInputSetState = (x_input_set_state *)GetProcAddress(xInputLibrary, "XInputSetState");
-    if(!XInputSetState){
+    if (!XInputSetState) {
       XInputSetState = XInputSetStateStub;
     }
   } else {
@@ -222,9 +222,16 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
 
 internal void Win32DisplayBufferInWindow(win32_offscreen_buffer *buffer, HDC deviceContext, int windowWidth,
                                          int windowHeight) {
+  int offsetX = 10;
+  int offsetY = 10;
+
+  PatBlt(deviceContext, 0, 0, windowWidth, offsetY, BLACKNESS);
+  PatBlt(deviceContext, 0, offsetY + buffer->height, windowWidth, windowHeight, BLACKNESS);
+  PatBlt(deviceContext, 0, 0, offsetX, windowHeight, BLACKNESS);
+  PatBlt(deviceContext, offsetX + buffer->width, 0, windowWidth, windowHeight, BLACKNESS);
   // TODO aspect ratio correction
-  StretchDIBits(deviceContext, 0, 0, buffer->width, buffer->height, 0, 0, buffer->width, buffer->height, buffer->memory,
-                &buffer->info, DIB_RGB_COLORS, SRCCOPY);
+  StretchDIBits(deviceContext, offsetX, offsetY, buffer->width, buffer->height, 0, 0, buffer->width, buffer->height,
+                buffer->memory, &buffer->info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -316,8 +323,8 @@ internal void Win32FillSoundBuffer(win32_sound_output *soundBuffer, game_sound_o
   }
 }
 
-internal void Win32ProcessXInputDigitalButton(game_button_state *oldState, game_button_state *newState,
-                                              DWORD buttonBit, DWORD buttonsState) {
+internal void Win32ProcessXInputDigitalButton(game_button_state *oldState, game_button_state *newState, DWORD buttonBit,
+                                              DWORD buttonsState) {
   newState->endedDown = (buttonsState & buttonBit) == buttonBit;
   newState->halfTransitionCount = (oldState->endedDown != newState->endedDown) ? 1 : 0;
 }
@@ -330,6 +337,7 @@ internal void Win32ProcessKeyboardMessage(game_button_state *newState, bool32 is
 }
 
 internal win32_replay_buffer *Win32GetReplayBuffer(win32_state *state, int unsigned index) {
+  assert(index > 0);
   assert(index < arrayCount(state->replayBuffers));
   win32_replay_buffer *result = &state->replayBuffers[index];
   return result;
@@ -381,20 +389,17 @@ internal void Win32BeginRecordingInput(win32_state *state, int inputRecordingInd
   }
 }
 
-internal void
-Win32BeginInputPlayBack(win32_state *state, int inputPlayingIndex)
-{
-    win32_replay_buffer *replayBuffer = Win32GetReplayBuffer(state, inputPlayingIndex);
-    if(replayBuffer->memoryBlock)
-    {
-        state->inputPlayingIndex = inputPlayingIndex;
+internal void Win32BeginInputPlayBack(win32_state *state, int inputPlayingIndex) {
+  win32_replay_buffer *replayBuffer = Win32GetReplayBuffer(state, inputPlayingIndex);
+  if (replayBuffer->memoryBlock) {
+    state->inputPlayingIndex = inputPlayingIndex;
 
-        char fileName[WIN32_STATE_FILE_NAME_COUNT];
-        Win32GetInputFileLocation(state, true, inputPlayingIndex, sizeof(fileName), fileName);
-        state->playbackHandle = CreateFileA(fileName, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
-        
-        CopyMemory(state->gameMemoryBlock, replayBuffer->memoryBlock, state->totalSize);
-    }
+    char fileName[WIN32_STATE_FILE_NAME_COUNT];
+    Win32GetInputFileLocation(state, true, inputPlayingIndex, sizeof(fileName), fileName);
+    state->playbackHandle = CreateFileA(fileName, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+
+    CopyMemory(state->gameMemoryBlock, replayBuffer->memoryBlock, state->totalSize);
+  }
 }
 
 internal void Win32EndInputPlayBack(win32_state *state) {
@@ -402,21 +407,16 @@ internal void Win32EndInputPlayBack(win32_state *state) {
   state->inputPlayingIndex = 0;
 }
 
-internal void
-Win32PlayBackInput(win32_state *state, game_input *newInput)
-{
-    DWORD bytesRead = 0;
-    if(ReadFile(state->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0))
-    {
-        if(bytesRead == 0)
-        {
-            // NOTE(casey): We've hit the end of the stream, go back to the beginning
-            int playingIndex = state->inputPlayingIndex;
-            Win32EndInputPlayBack(state);
-            Win32BeginInputPlayBack(state, playingIndex);
-            ReadFile(state->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0);
-        }
+internal void Win32PlayBackInput(win32_state *state, game_input *newInput) {
+  DWORD bytesRead = 0;
+  if (ReadFile(state->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0)) {
+    if (bytesRead == 0) {
+      int playingIndex = state->inputPlayingIndex;
+      Win32EndInputPlayBack(state);
+      Win32BeginInputPlayBack(state, playingIndex);
+      ReadFile(state->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0);
     }
+  }
 }
 
 internal void Win32RecordInput(win32_state *state, game_input *newInput) {
@@ -424,11 +424,9 @@ internal void Win32RecordInput(win32_state *state, game_input *newInput) {
   WriteFile(state->recordingHandle, newInput, sizeof(*newInput), &bytesWritten, 0);
 }
 
-internal void
-Win32EndRecordingInput(win32_state *state)
-{
-    CloseHandle(state->recordingHandle);
-    state->inputRecordingIndex = 0;
+internal void Win32EndRecordingInput(win32_state *state) {
+  CloseHandle(state->recordingHandle);
+  state->inputRecordingIndex = 0;
 }
 
 internal void Win32ProcessPendingMessages(win32_state *state, game_controller_input *keyboardController) {
@@ -610,7 +608,7 @@ internal bool32 Win32ProcessGamePad(game_input *oldInput, game_input *newInput, 
   }
 
   Win32ProcessPendingMessages(state, newKeyboardController);
-  if(globalPause){
+  if (globalPause) {
     return true;
   }
   POINT mousePos;
@@ -676,13 +674,20 @@ internal bool32 Win32ProcessGamePad(game_input *oldInput, game_input *newInput, 
       Win32ProcessXInputDigitalButton(&oldController->moveRight, &newController->moveRight, 1,
                                       (newController->stickAverageX > threshold) ? 1 : 0);
 
-      Win32ProcessXInputDigitalButton(&oldController->actionDown, &newController->actionDown, XINPUT_GAMEPAD_A, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->actionUp, &newController->actionUp, XINPUT_GAMEPAD_Y, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->actionRight, &newController->actionRight, XINPUT_GAMEPAD_B, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->actionLeft, &newController->actionLeft, XINPUT_GAMEPAD_X, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->leftShoulder, &newController->leftShoulder, XINPUT_GAMEPAD_LEFT_SHOULDER, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->rightShoulder, &newController->rightShoulder, XINPUT_GAMEPAD_RIGHT_SHOULDER, pad->wButtons);
-      Win32ProcessXInputDigitalButton(&oldController->start, &newController->start, XINPUT_GAMEPAD_START, pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->actionDown, &newController->actionDown, XINPUT_GAMEPAD_A,
+                                      pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->actionUp, &newController->actionUp, XINPUT_GAMEPAD_Y,
+                                      pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->actionRight, &newController->actionRight, XINPUT_GAMEPAD_B,
+                                      pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->actionLeft, &newController->actionLeft, XINPUT_GAMEPAD_X,
+                                      pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->leftShoulder, &newController->leftShoulder,
+                                      XINPUT_GAMEPAD_LEFT_SHOULDER, pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->rightShoulder, &newController->rightShoulder,
+                                      XINPUT_GAMEPAD_RIGHT_SHOULDER, pad->wButtons);
+      Win32ProcessXInputDigitalButton(&oldController->start, &newController->start, XINPUT_GAMEPAD_START,
+                                      pad->wButtons);
       Win32ProcessXInputDigitalButton(&oldController->back, &newController->back, XINPUT_GAMEPAD_BACK, pad->wButtons);
     } else {
       newController->isConnected = false;
@@ -722,13 +727,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
   Win32ResizeDIBSection(&backBuffer, 960, 540);
 
-  WNDCLASSA WindowClass = {};
-  WindowClass.style = CS_HREDRAW | CS_VREDRAW;
-  WindowClass.lpfnWndProc = Win32MainWindowCallback;
-  WindowClass.hInstance = instance;
-  WindowClass.lpszClassName = "MyWindowClass";
-  if (RegisterClass(&WindowClass)) {
-    HWND window = CreateWindowEx(0, WindowClass.lpszClassName, "Super stuff", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+  WNDCLASSA windowClass = {};
+  windowClass.style = CS_HREDRAW | CS_VREDRAW;
+  windowClass.lpfnWndProc = Win32MainWindowCallback;
+  windowClass.hInstance = instance;
+  windowClass.lpszClassName = "MyWindowClass";
+  if (RegisterClass(&windowClass)) {
+    HWND window = CreateWindowEx(0, windowClass.lpszClassName, "Super stuff", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                                  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
     if (window) {
       HDC deviceContext = GetDC(window);
@@ -769,7 +774,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
           VirtualAlloc(baseAddress, state.totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
       state.gameMemoryBlock = gameMemory.permanentStorage;
       gameMemory.transientStorage = (uint8_t *)gameMemory.permanentStorage + gameMemory.permanentStorageSize;
-      for (int replayIndex = 0; replayIndex < arrayCount(state.replayBuffers); ++replayIndex) {
+      for (int replayIndex = 1; replayIndex < arrayCount(state.replayBuffers); ++replayIndex) {
         win32_replay_buffer *replayBuffer = &state.replayBuffers[replayIndex];
 
         Win32GetInputFileLocation(&state, false, replayIndex, sizeof(replayBuffer->fileName), replayBuffer->fileName);
@@ -785,7 +790,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         replayBuffer->memoryBlock = MapViewOfFile(replayBuffer->memoryMap, FILE_MAP_ALL_ACCESS, 0, 0, state.totalSize);
         if (replayBuffer->memoryBlock) {
         } else {
-          // TODO(casey): Diagnostic
         }
       }
       if (samples && gameMemory.transientStorage && gameMemory.permanentStorage) {
